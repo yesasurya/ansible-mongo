@@ -1,0 +1,6 @@
+[master-nodes]
+ansible-master-node
+
+[managed-nodes]
+ansible-managed-node-1
+ansible-managed-node-2

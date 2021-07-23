@@ -1,0 +1,47 @@
+---
+- hosts: all
+  become: True
+  tasks:
+  # These tasks are for inserting host entries into /etc/hosts file in each of the nodes
+  - name: Copy the script to add entries to /etc/hosts
+    copy: src=./scripts/add_entries_to_hostfile.py dest=./add_entries_to_hostfile.py
+  - name: Run the script
+    shell: python3 add_entries_to_hostfile.py {% for key, value in hostvars.items() %}{% print('{0} {1} '.format(value['ansible_all_ipv4_addresses'][0], key)) %}{% endfor %}
+
+- hosts: ansible-master-node
+  become: True
+  tasks:
+  # These tasks are for installation of MongoDB
+  - name: Import GPG key
+    shell: curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
+  - name: Add MongoDB repository
+    shell: echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+  - name: Update apt
+    shell: apt update -y
+  - name: Install MongoDB using apt
+    shell: apt install mongodb-org -y
+
+  # This task is to get the username and password that will be created for MongoDB
+  - name: Get MongoDB admin username and password
+    set_fact:
+      ADMIN_USERNAME: "{{ lookup('env','ADMIN_USERNAME') or 'admin' }}"
+      ADMIN_PASSWORD: "{{ lookup('env','ADMIN_PASSWORD') or 'admin' }}"
+
+  # This task is to start MongoDB service in un-authenticated mode
+  # This task requires three steps. Why? Because we want to make the task execution is idempotent
+  - name: Start MongoDB service in un-authenticated mode
+    shell: |
+      mongod --shutdown --dbpath /var/lib/mongodb --logpath /var/log/mongod.log
+      mongod --fork --port 27017 --dbpath /var/lib/mongodb --logpath /var/log/mongod.log
+      mongo admin --eval 'db.dropUser("{{ ADMIN_USERNAME }}")'
+
+  # This task is to create an Admin user in the MongoDB service
+  # As in the previous task, the Admin user is dropped, this command execution would never give error stating that an Admin user is already exist
+  - name: Create admin user for MongoDB and shutdown the MongoDB service
+    shell: mongo admin --eval 'db.createUser({user:"{{ ADMIN_USERNAME }}", pwd:"{{ ADMIN_PASSWORD }}", roles:[{role:"userAdminAnyDatabase", db:"admin"}, "readWriteAnyDatabase"]})'
+  
+  # This task is to start MongoDB service in authenticated mode
+  - name: Start MongoDB in authenticated mode
+    shell: |
+      mongod --shutdown --dbpath /var/lib/mongodb --logpath /var/log/mongod.log
+      mongod --auth --fork --port 27017 --dbpath /var/lib/mongodb --logpath /var/log/mongod.log

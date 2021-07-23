@@ -1,9 +1,6 @@
 import sys
 
 
-log = open('log.txt', 'w')
-
-
 def check_if_entry_already_exist(hostname, lines):
   for line in lines:
     if hostname in line:
